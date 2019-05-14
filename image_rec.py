@@ -22,8 +22,31 @@ from skimage import measure
 import urllib
 from win32api import GetSystemMetrics
 
+
+# Crop target object
+def crop_object(img, img_thrs):
+    """
+    Parameters
+    ----------
+    img : image (RGB)
+        image
+           
+    Returns
+    -------
+    out
+        image 2D
+    """
+    im2, contours, hierarchy = cv2.findContours(img_thrs, cv2.RETR_TREE, 
+                                            cv2.CHAIN_APPROX_SIMPLE)
+    sorted_ctrs = sorted(contours, key=lambda ctr: cv2.boundingRect(ctr)[0])
+    x, y, w, h = cv2.boundingRect(img_thrs)
+# Getting ROI
+    roi = img[y:y + h, x:x + w]
+    return(roi)
+
+
 # Segment object
-def filter_frame(img):
+def filter_frame(img, min, max):
     """
     Parameters
     ----------
@@ -36,36 +59,37 @@ def filter_frame(img):
         image 2D
     """
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, thresholded = cv2.threshold(gray, 250, 255, cv2.THRESH_BINARY)
-    kernel = np.ones((20, 20),np.uint8)
+    _, thresholded = cv2.threshold(gray, min, max, cv2.THRESH_BINARY)
+    kernel = np.ones((25, 25),np.uint8)
     kernel_length = np.array(thresholded).shape[1]//80
     verticle_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_length))
       
     erosion = cv2.erode(thresholded, kernel, iterations = 1)
     closing = cv2.morphologyEx(erosion, cv2.MORPH_CLOSE, kernel)
-    #dilation = cv2.dilate(closing, kernel,iterations = 6)
-    #dilation = cv2.dilate(dilation, verticle_kernel,iterations = 4)
-    #dilation = cv2.erode(dilation, verticle_kernel,iterations = 4)
-     
-    plt.figure()
-    plt.axis("off")
-    plt.imshow(closing)
-    plt.show()
-      
-    return(thresholded)
+    im_floodfill = closing.copy()
+    # Mask used to flood filling.
+    h, w = closing.shape[:2]
+    mask = np.zeros((h+2, w+2), np.uint8)
+    # Floodfill from point (0, 0)
+    cv2.floodFill(im_floodfill, mask, (0,0), 255);
+    # Invert floodfilled image
+    im_floodfill_inv = cv2.bitwise_not(im_floodfill)
+    # Combine the two images to get the foreground.
+    im_out = closing | im_floodfill_inv
+    return(im_floodfill_inv)
+
 
 #right-click event value 
 def click_event(event, x, y, flags, param):
-    global right_clicks
+   
     if event == cv2.EVENT_LBUTTONDOWN:
-        red = img[y,x,2]
-        blue = img[y,x,0]
-        green = img[y,x,1]
-        
-        #store the coordinates of the right-click event
-        right_clicks.append([x, y])
-        #print(red, green, blue) 
-        print(right_clicks)
+        a = img.shape
+        d = list()
+        print(a[2])
+        for i in range(1, a[2]):
+            d.append(img[y,x,i])
+       
+        print(d)
         
 
 
@@ -90,22 +114,43 @@ def im2double(img):
 
 def ccGrayWorld(img):
   
+    [row, col] = img.shape[0:2]
+    im2d = img.reshape((row*col, 3))
+    im2d = im2double(im2d)
+  # #Grey World
+  # illuminant corrected image
+    imGW = im2double(img)
+    c=0; imGW[:,:,c] = imGW[:,:,c] / cv2.mean(im2d[0:im2d.shape[0], c])[0]
+    c=1; imGW[:,:,c] = imGW[:,:,c] / cv2.mean(im2d[0:im2d.shape[0], c])[0]
+    c=2; imGW[:,:,c] = imGW[:,:,c] / cv2.mean(im2d[0:im2d.shape[0], c])[0]
+    u = np.uint8(np.round(imGW*255))
+      
+    return(u)
+
+  
+def ccMaxRGB(img):
   [row, col] = img.shape[0:2]
   im2d = img.reshape((row*col, 3))
   im2d = im2double(im2d)
-  # #Grey World
-  # illuminant corrected image
-  imGW = im2double(img)
-  c=0; imGW[:,:,c] = imGW[:,:,c] / cv2.mean(im2d[0:im2d.shape[0], c])[0]
-  c=1; imGW[:,:,c] = imGW[:,:,c] / cv2.mean(im2d[0:im2d.shape[0], c])[0]
-  c=2; imGW[:,:,c] = imGW[:,:,c] / cv2.mean(im2d[0:im2d.shape[0], c])[0]
-  u = np.uint8(np.round(imGW*255))
-  #plt.figure()
-  #plt.axis("off")
-  #plt.imshow(u)
-  #plt.show()
-  return(u)
+  #MaxRGB
+  LMaxRGB = LMaxRGB = list()
+  LMaxRGB.append(np.max(im2d[0:im2d.shape[0],0]))
+  LMaxRGB.append(np.max(im2d[0:im2d.shape[0],1]))
+  LMaxRGB.append(np.max(im2d[0:im2d.shape[0],2]))
+ 
+  #% illuminant corrected image
+  imMaxRGB = im2double(img)
+  c=0; imMaxRGB[:,:,c] = imMaxRGB[:,:,c] / LMaxRGB[c];
+  c=1; imMaxRGB[:,:,c] = imMaxRGB[:,:,c] / LMaxRGB[c];
+  c=2; imMaxRGB[:,:,c] = imMaxRGB[:,:,c] / LMaxRGB[c];
   
+  u = np.uint8(np.round(imMaxRGB*255))
+  plt.figure()
+  plt.axis("off")
+  plt.imshow(u)
+  plt.show()
+  
+  return(u)
 
 
 # This function search for all images in a given directory
@@ -200,13 +245,22 @@ def impixel(img):
     cv2.waitKey(0)
     cv2.destroyAllWindows
 
-
+# Plot image
+def plot_image(img):
+    plt.figure()
+    plt.axis("off")
+    plt.imshow(img)
+    plt.show()
+    
 #fnames = search_images('images', '.JPG')
 #c = get_features(fnames)
-    
-right_clicks = list()
+right_clicks = list()   
+# Read image
 img = cv2.imread('images/C01_ (1).JPG')
-#coco = ccGrayWorld(img)
+# Filter colour card
+thres_obj = filter_frame(img, 250, 255)
+# Crop colour card
+img_cropt = crop_object(img, thres_obj)
+#plot_image(img_cropt)
 
-#gray = cv2.cvtColor(coco, cv2.COLOR_BGR2GRAY)
-filter_frame(img)
+#impixel(img_cropt[:,:,0])
