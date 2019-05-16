@@ -36,17 +36,17 @@ def crop_object(img, img_thrs):
     out
         image 2D
     """
-    im2, contours, hierarchy = cv2.findContours(img_thrs, cv2.RETR_TREE, 
-                                            cv2.CHAIN_APPROX_SIMPLE)
-    sorted_ctrs = sorted(contours, key=lambda ctr: cv2.boundingRect(ctr)[0])
+    #im2, contours, hierarchy = cv2.findContours(img_copy, cv2.RETR_TREE, 
+     #                                       cv2.CHAIN_APPROX_SIMPLE)
+    #sorted_ctrs = sorted(contours, key=lambda ctr: cv2.boundingRect(ctr)[0])
     x, y, w, h = cv2.boundingRect(img_thrs)
 # Getting ROI
-    roi = img[y:y + h, x:x + w]
+    roi = img[y:y + h, x:x + w,:]
     return(roi)
 
 
 # Segment object
-def filter_frame(img, min, max):
+def filter_frame(img_copy, min, max):
     """
     Parameters
     ----------
@@ -58,13 +58,26 @@ def filter_frame(img, min, max):
     out
         image 2D
     """
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.cvtColor(img_copy, cv2.COLOR_BGR2GRAY)
     _, thresholded = cv2.threshold(gray, min, max, cv2.THRESH_BINARY)
+    
+    return(thresholded)
+    
+#Pre-process whole image   
+def postproc_custom1(binay_img):
+    """
+    Parameters
+    ----------
+    img : image (RGB)
+        image
+           
+    Returns
+    -------
+    out
+        image 2D
+    """
     kernel = np.ones((25, 25),np.uint8)
-    kernel_length = np.array(thresholded).shape[1]//80
-    verticle_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, kernel_length))
-      
-    erosion = cv2.erode(thresholded, kernel, iterations = 1)
+    erosion = cv2.erode(binay_img, kernel, iterations = 1)
     closing = cv2.morphologyEx(erosion, cv2.MORPH_CLOSE, kernel)
     im_floodfill = closing.copy()
     # Mask used to flood filling.
@@ -85,18 +98,21 @@ def click_event(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         a = img.shape
         d = list()
-        print(a[2])
+        #print(a[2])
         for i in range(1, a[2]):
             d.append(img[y,x,i])
+        red = img[y,x,0]
+        green = img[y,x,1]
+        blue = img[y,x,2]
        
-        print(d)
+        print(red, green, blue)
         
 
 
 # Convert image to double
 def im2double(img):
     """
-     Parameters
+    Parameters
     ----------
     img : image (RGB)
         image
@@ -181,12 +197,12 @@ def search_images(path, kw):
     
     
  # This function extract features from images
-def get_features(filenames):
+def get_features(f):
     """
     Parameters
     ----------
-    filenames : list
-        list of image filenames
+    f : string
+        image filename
    
        
     Returns
@@ -196,26 +212,53 @@ def get_features(filenames):
     
         
     """
-    res_im = dict()
-
-    for f in fnames:
-        img = cv2.imread(f, cv2.IMREAD_GRAYSCALE)
-        #plt.imshow(img)
-        crop_img = img[500:2000, 1000:3900]
-        #plt.imshow(crop_img)
-        figure()
-        #gray()
-    # show contours with origin upper left corner
-        contour(crop_img, origin='image')
-        axis('equal')
-        axis('off')
+   
+    #img = cv2.imread(f, cv2.IMREAD_GRAYSCALE)
     
-        figure()
-        hist(crop_img.flatten(), 128)
-        show()
-        res_im[f.split("\\")[1]] = np.mean(crop_img.flatten())
+    img = cv2.imread(f)
+        #plt.imshow(img)
+    crop_img = img[500:2000, 1000:3900]
+    print(f, np.mean(crop_img.flatten()))
+    plot_image(crop_img)
+    thres_obj = filter_frame(img, 250, 255)
+        # post-process segmented image
+    thres_obj = postproc_custom1(thres_obj)
+        # Crop colour card
+    img_cropt = crop_object(img, thres_obj)
+        
+        # Filter boxes in color card
+    thres_boxes = filter_frame(img_cropt, 230, 255)
+    plot_image(thres_boxes)
+        # Select boxes
+    thres_boxes[np.where(thres_boxes == 0)] = 1
+    thres_boxes[np.where(thres_boxes == 255)] = 0
+    kernel = np.ones((25, 25),np.uint8)
+    thres_boxes = cv2.erode(thres_boxes, kernel, iterations = 1)
+    
+    im_floodfill = thres_boxes.copy()
+    # Mask used to flood filling.
+    h, w = thres_boxes.shape[:2]
+    mask = np.zeros((h+2, w+2), np.uint8)
+    # Floodfill from point (0, 0)
+    cv2.floodFill(im_floodfill, mask, (0,0), 255);
+    # Invert floodfilled image
+    thres_boxes = cv2.bitwise_not(im_floodfill)
+       
+    #plot_image(thres_boxes)
+        
+    im2, contours, hierarchy = cv2.findContours(thres_boxes, cv2.RETR_TREE, 
+                                                    cv2.CHAIN_APPROX_SIMPLE)
+        
+    box_dic = dict()
+    for i in range(0, len(contours)) :
+        roi = crop_object(img_cropt, contours[i])
+        #plot_image(roi)
+        box_dic[i] = np.mean(roi.flatten()), cv2.contourArea(contours[i])
+            
+    #plot_image(img_cropt)
+       
              
-    return(res_im)
+    return(np.mean(crop_img.flatten()), box_dic)
           
 
 # Get pixel value      
@@ -247,20 +290,49 @@ def impixel(img):
 
 # Plot image
 def plot_image(img):
+    """
+    Parameters
+    ----------
+    img : image (RGB)
+        image
+           
+    """
     plt.figure()
-    plt.axis("off")
+    plt.axis("on")
     plt.imshow(img)
     plt.show()
-    
-#fnames = search_images('images', '.JPG')
-#c = get_features(fnames)
-right_clicks = list()   
-# Read image
-img = cv2.imread('images/C01_ (1).JPG')
-# Filter colour card
-thres_obj = filter_frame(img, 250, 255)
-# Crop colour card
-img_cropt = crop_object(img, thres_obj)
-#plot_image(img_cropt)
 
-#impixel(img_cropt[:,:,0])
+
+
+fnames = search_images('images', '.JPG')
+res_im = dict()
+
+for f in fnames:
+    res_im[f.split("\\")[1]] = get_features(f)
+     
+print (res_im)
+
+
+
+fout = "imag_res.csv"    
+fo = open(fout, "w")
+s = "filename" +  "," + "col" + "," + "row" + "," + "plotcolor" 
+for i in range(0, 6):
+    s = s + ", " + 'box' + str(i)
+s = s + "\n"
+fo.write(s)
+    
+    
+for k in res_im.keys():
+    s = ""
+    s = s + k + "," + str(k.split("_")[0]) + \
+    "," + str(k.split("_")[1].split(")")[0].split("(")[1]) + "," + \
+    str(res_im[k][0])
+    for k1 in range(0, len(res_im[k][1])):
+        s = s + ","  +  str(res_im[k][1][k1][0])
+    s = s + "\n"
+    fo.write(s)
+    
+fo.close()
+
+
