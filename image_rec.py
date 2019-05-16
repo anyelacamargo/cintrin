@@ -218,8 +218,8 @@ def get_features(f):
     img = cv2.imread(f)
         #plt.imshow(img)
     crop_img = img[500:2000, 1000:3900]
-    print(f, np.mean(crop_img.flatten()))
-    plot_image(crop_img)
+    #print(f, np.mean(crop_img.flatten()))
+    #plot_image(crop_img)
     thres_obj = filter_frame(img, 250, 255)
         # post-process segmented image
     thres_obj = postproc_custom1(thres_obj)
@@ -228,7 +228,7 @@ def get_features(f):
         
         # Filter boxes in color card
     thres_boxes = filter_frame(img_cropt, 230, 255)
-    plot_image(thres_boxes)
+    #plot_image(thres_boxes)
         # Select boxes
     thres_boxes[np.where(thres_boxes == 0)] = 1
     thres_boxes[np.where(thres_boxes == 255)] = 0
@@ -310,7 +310,7 @@ res_im = dict()
 for f in fnames:
     res_im[f.split("\\")[1]] = get_features(f)
      
-print (res_im)
+#print (res_im)
 
 
 
