@@ -6,21 +6,9 @@ avc
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
-from PIL import Image
 import os, os.path
-from pylab import *
+import multiprocessing as mp
 
-
-
-import argparse
-import utils
-from collections import Counter
-import imutils
-import pprint
-import gc
-from skimage import measure
-import urllib
-from win32api import GetSystemMetrics
 
 
 # Crop target object
@@ -88,7 +76,7 @@ def postproc_custom1(binay_img):
     # Invert floodfilled image
     im_floodfill_inv = cv2.bitwise_not(im_floodfill)
     # Combine the two images to get the foreground.
-    im_out = closing | im_floodfill_inv
+    #im_out = closing | im_floodfill_inv
     return(im_floodfill_inv)
 
 
@@ -160,11 +148,6 @@ def ccMaxRGB(img):
   c=1; imMaxRGB[:,:,c] = imMaxRGB[:,:,c] / LMaxRGB[c];
   c=2; imMaxRGB[:,:,c] = imMaxRGB[:,:,c] / LMaxRGB[c];
   
-  u = np.uint8(np.round(imMaxRGB*255))
-  plt.figure()
-  plt.axis("off")
-  plt.imshow(u)
-  plt.show()
   
   return(u)
 
@@ -216,10 +199,20 @@ def get_features(f):
     #img = cv2.imread(f, cv2.IMREAD_GRAYSCALE)
     
     img = cv2.imread(f)
+    hsvImg = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
+    plot_image(hsvImg)
+    hsvImg[...,2] = hsvImg[...,2]*0.6
+
+    plt.subplot(111), plt.imshow(cv2.cvtColor(hsvImg,cv2.COLOR_HSV2RGB))
+    plt.title('brightened image'), plt.xticks([]), plt.yticks([])
+    plt.show()
+    #equ = cv2.equalizeHist(img)
+    #res = np.hstack((img, equ))
+    #cv2.imwrite('res.png',res)
         #plt.imshow(img)
     crop_img = img[500:2000, 1000:3900]
     #print(f, np.mean(crop_img.flatten()))
-    #plot_image(crop_img)
+    plot_image(crop_img)
     thres_obj = filter_frame(img, 250, 255)
         # post-process segmented image
     thres_obj = postproc_custom1(thres_obj)
@@ -228,7 +221,7 @@ def get_features(f):
         
         # Filter boxes in color card
     thres_boxes = filter_frame(img_cropt, 230, 255)
-    #plot_image(thres_boxes)
+    plot_image(thres_boxes)
         # Select boxes
     thres_boxes[np.where(thres_boxes == 0)] = 1
     thres_boxes[np.where(thres_boxes == 255)] = 0
@@ -304,14 +297,15 @@ def plot_image(img):
 
 
 
+num_cores = mp.cpu_count()
 fnames = search_images('images', '.JPG')
-res_im = dict()
 
+
+res_im = dict()
 for f in fnames:
+    print(f.split("\\")[1])
     res_im[f.split("\\")[1]] = get_features(f)
      
-#print (res_im)
-
 
 
 fout = "imag_res.csv"    
